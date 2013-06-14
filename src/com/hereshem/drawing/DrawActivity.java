@@ -3,22 +3,27 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Context;
+import android.content.DialogInterface;
+import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
+import android.database.Cursor;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
-import android.graphics.PorterDuff;
-import android.graphics.PorterDuffXfermode;
 import android.os.Bundle;
 import android.os.Environment;
+import android.provider.MediaStore;
 import android.util.DisplayMetrics;
-import android.util.Log;
+import android.view.Display;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -40,6 +45,7 @@ public class DrawActivity extends Activity {
 	protected int progress;
 	protected Dialog dialog;
 	protected float stroke = 6;
+	protected boolean changed = false;
 
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
@@ -62,6 +68,7 @@ public class DrawActivity extends Activity {
 	 */
 	@Override
 	public boolean onCreateOptionsMenu(Menu menu) {
+		menu.add(Menu.NONE, Menu.FIRST+6, 0, "Open");
 		menu.add(Menu.NONE, Menu.FIRST+1, 0, "Save");
 		menu.add(Menu.NONE, Menu.FIRST+4, 0, "Stroke");
 		menu.add(Menu.NONE, Menu.FIRST+2, 0, "Pencil");
@@ -74,14 +81,17 @@ public class DrawActivity extends Activity {
 		switch (item.getItemId()) {
 			case Menu.FIRST+1:
 				this.saveToFile(String.valueOf(System.currentTimeMillis()));
+				changed = false;
 				return true;
 				
 			case Menu.FIRST+2:
 				this.pv.togglePencil(true);
+				DrawActivity.this.pv.paint.setStrokeWidth(DrawActivity.this.stroke);
 				return true;
 	
 			case Menu.FIRST+3:
 				this.pv.togglePencil(false);
+				DrawActivity.this.pv.paint.setStrokeWidth(30);
 				return true;
 	
 			case Menu.FIRST+4:
@@ -90,10 +100,57 @@ public class DrawActivity extends Activity {
 	
 			case Menu.FIRST+5:
 				this.pv.clear();
+				changed = false;
+				return true;
+			case Menu.FIRST+6:
+				// ask for save
+				Intent photoPickerIntent = new Intent(Intent.ACTION_PICK);//ACTION_GET_CONTENT);//ACTION_PICK "image/*" "file/*"
+				photoPickerIntent.setType("image/*");
+				startActivityForResult(photoPickerIntent, 99);				
 				return true;
 		}
-		return true;
+		return super.onOptionsItemSelected(item);		
+	}
+
+	@Override
+	protected void onActivityResult(int requestCode, int resultCode, Intent returnedIntent) { 
+	    super.onActivityResult(requestCode, resultCode, returnedIntent); 
+	    switch(requestCode) { 
+		    case 99:
+		        if(resultCode == RESULT_OK){
+		        	//this.pv.clear();
+	        	    String[] projection = { MediaStore.Images.Media.DATA };
+	                Cursor cursor = managedQuery(returnedIntent.getData(), projection, null, null, null);
+	                int column_index = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA);
+	                cursor.moveToFirst();
+	                String path = cursor.getString(column_index);
+	                //Toast.makeText(getApplicationContext(), "path is " + path, Toast.LENGTH_SHORT).show();
+	                
+	                //Bitmap bitmap = ;
+	                this.pv.bgImage = getScaledBitmap(BitmapFactory.decodeFile(path));
+	                //this.pv.clear();
+					this.pv.invalidate();
+		        }
+	    }
+	}
+	private Bitmap getScaledBitmap(Bitmap bitmap) {
+		Display display = getWindowManager().getDefaultDisplay();
+		int width = bitmap.getWidth();
+		int height = bitmap.getHeight();
 		
+		if(width > display.getWidth() || height > display.getHeight()){
+			float wrat = width/display.getWidth();
+			float hrat = height/display.getHeight();
+			if(wrat > hrat){
+				height = (int) (height/wrat);
+				width = (int) (width/wrat);
+			}
+			else{
+				height = (int) (height/hrat);
+				width = (int) (width/hrat);
+			}
+		}
+		return Bitmap.createScaledBitmap(bitmap, width, height, true);
 	}
 
 	/*
@@ -177,17 +234,17 @@ public class DrawActivity extends Activity {
 		try {
 			file.createNewFile();
 		} catch (Exception e) {
-			Log.e("draw_save", e.toString());
+			//Log.e("draw_save", e.toString());
 		}
 
 		try {
 			fOut = new FileOutputStream(file);
 		} catch (Exception e) {
-			Log.e("draw_save1", e.toString());
+			//Log.e("draw_save1", e.toString());
 		}
 
 		if (this.pv.getDrawingCache() == null) {
-			Log.e("lal", "tis null");
+			//Log.e("lal", "tis null");
 		}
 
 		this.pv.getDrawingCache()
@@ -197,9 +254,9 @@ public class DrawActivity extends Activity {
 			fOut.flush();
 			fOut.close();
 		} catch (IOException e) {
-			Log.e("draw_save1", e.toString());
+			//Log.e("draw_save1", e.toString());
 		}
-		Toast.makeText(DrawActivity.this, "Saved as \""+fname+"\"", Toast.LENGTH_SHORT).show();
+		Toast.makeText(DrawActivity.this, "File saved in \"/drawing/"+fname+".jpg\"", Toast.LENGTH_SHORT).show();
 		
 	}
 	
@@ -280,7 +337,7 @@ public class DrawActivity extends Activity {
 			switch (e.getAction()) {
 			case MotionEvent.ACTION_DOWN:
 				this.touchStart(x, y);
-				this.touchMove(x + 0.8f, y + 0.8f);
+				this.touchMove(x + 0.8f, y + 0.8f);				
 				invalidate();
 				break;
 			case MotionEvent.ACTION_MOVE:
@@ -289,6 +346,7 @@ public class DrawActivity extends Activity {
 				break;
 			case MotionEvent.ACTION_UP:
 				this.touchUp();
+				changed = true;
 				invalidate();
 				break;
 			}
@@ -302,6 +360,7 @@ public class DrawActivity extends Activity {
 			canvas.drawBitmap(this.bgImage, 0, 0, this.bmpPaint);
 			canvas.drawBitmap(this.bmp, 0, 0, this.bmpPaint);
 			canvas.drawPath(this.path, this.paint);
+			
 		}
 
 		/*
@@ -309,31 +368,59 @@ public class DrawActivity extends Activity {
 		 */
 		protected void togglePencil(Boolean b) {
 			if (b) { // set pencil
-				paint.setXfermode(null);
+				//paint.setXfermode(null);
+				paint.setColor(Color.BLACK);
 				this.pencil = true;
 			} else { // set eraser
-				paint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
+				//paint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
+				paint.setColor(Color.WHITE);
 				this.pencil = false;
 			}
 			//DrawActivity.this.setTitle();
 		}
 
-		public void setColor(int c) {
-			this.paint.setColor(c);
-			this.colour = c;
-		}
-
-		public int getColor() {
-			return this.colour;
-		}
-
 		protected void clear() {
 			this.path = new Path(); // empty path
-			this.canvas.drawColor(Color.WHITE);
+			//this.canvas.drawColor(Color.WHITE);
 			if (this.bgImage != null) {
 				this.canvas.drawBitmap(this.bgImage, 0, 0, null);
 			}
 			this.invalidate();
 		}
+	}
+
+	@Override
+	public void finish() {
+		if(changed){
+		AlertDialog.Builder alert = new AlertDialog.Builder(DrawActivity.this);
+		alert.setTitle("Save image?")
+			//.setMessage("Image orientation is changed, save it?")
+			.setPositiveButton("Yes", new DialogInterface.OnClickListener() {
+				@Override
+				public void onClick(DialogInterface dialog, int which) {
+						DrawActivity.this.saveToFile(String.valueOf(System.currentTimeMillis()));
+						changed = false;
+						finish();
+				}
+			})
+			.setNegativeButton("No", new DialogInterface.OnClickListener() {
+				@Override
+				public void onClick(DialogInterface dialog, int which) {
+					//return;
+					changed  = false;
+					finish();
+				}
+			})
+			.setNeutralButton("Cancel", new DialogInterface.OnClickListener() {
+				@Override
+				public void onClick(DialogInterface dialog, int which) {
+					return;
+				}
+			})
+			.show();
+		}
+		else{
+			super.finish();
+		}		
 	}
 }
